@@ -1,5 +1,5 @@
 <template>
-    <div class="box">
+    <div class="keys-container">
         <h3>
             <span>Keys in "{{ selectedDs || '...' }}"</span>
             <span v-if="keys.length" class="count-badge">
@@ -15,25 +15,40 @@
                 title="ล้างคำค้นหา">✕</button>
         </div>
 
-        <ul v-if="filteredKeys.length">
-            <li v-for="k in filteredKeys" :key="k.key" :class="{ active: selectedKey === k.key }">
-                <div @click="$emit('select-key', k.key)" style="flex:1; word-break: break-all;">
-                    <span v-html="highlightMatch(k.key, keySearchQuery)"></span>
+        <div class="keys-body">
+            <!-- Skeleton Loader when loading keys -->
+            <div v-if="loadingKeys" class="skeleton-list">
+                <div v-for="i in 6" :key="i" class="skeleton-item">
+                    <div class="skeleton-bar skeleton-key-name"></div>
+                    <div class="skeleton-bar skeleton-btn"></div>
                 </div>
-                <button @click.stop="$emit('delete-key', k.key)" class="btn-small btn-danger"
-                    title="Delete Key">🗑️</button>
-            </li>
-        </ul>
-        <div v-else-if="loadingKeys" class="loading-state">Loading keys...</div>
-        <div v-else-if="!selectedDs" class="empty-state">Select a DataStore first</div>
-        <div v-else-if="keys.length && !filteredKeys.length" class="empty-state">
-            ไม่พบ Key ที่ตรงกับ "{{ keySearchQuery }}"
+            </div>
+
+            <!-- Keys List -->
+            <ul v-else-if="filteredKeys.length">
+                <li v-for="k in filteredKeys" :key="k.key"
+                    :class="{ active: selectedKey === k.key, disabled: loadingData }" @click="handleSelect(k.key)">
+                    <div class="key-item-content">
+                        <span v-html="highlightMatch(k.key, keySearchQuery)"></span>
+                        <span v-if="selectedKey === k.key && loadingData" class="spinner-sm"
+                            title="Loading data..."></span>
+                    </div>
+                    <button @click.stop="$emit('delete-key', k.key)" class="btn-small btn-danger" title="Delete Key"
+                        :disabled="loadingData">🗑️</button>
+                </li>
+            </ul>
+            <div v-else-if="!selectedDs" class="empty-state">Select a DataStore first</div>
+            <div v-else-if="keys.length && !filteredKeys.length" class="empty-state">
+                ไม่พบ Key ที่ตรงกับ "{{ keySearchQuery }}"
+            </div>
+            <div v-else class="empty-state">No keys found.</div>
         </div>
-        <div v-else class="empty-state">No keys found.</div>
     </div>
 </template>
 
 <script setup>
+import { computed } from 'vue';
+
 const props = defineProps({
     selectedDs: {
         type: String,
@@ -47,6 +62,10 @@ const props = defineProps({
         type: Boolean,
         default: false
     },
+    loadingData: {
+        type: Boolean,
+        default: false
+    },
     selectedKey: {
         type: String,
         default: ''
@@ -57,7 +76,7 @@ const props = defineProps({
     }
 });
 
-defineEmits(['update:keySearchQuery', 'select-key', 'delete-key']);
+const emit = defineEmits(['update:keySearchQuery', 'select-key', 'delete-key']);
 
 const filteredKeys = computed(() => {
     if (!props.keySearchQuery.trim()) return props.keys;
@@ -71,28 +90,41 @@ const highlightMatch = (text, query) => {
     const regex = new RegExp(`(${escapedQuery})`, 'gi');
     return text.replace(regex, '<mark class="highlight-text">$1</mark>');
 };
+
+const handleSelect = (keyName) => {
+    if (props.loadingData) return; // Spam protection
+    emit('select-key', keyName);
+};
 </script>
 
 <style scoped>
-.box {
-    background: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+.keys-container {
     display: flex;
     flex-direction: column;
+    height: 100%;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    box-sizing: border-box;
 }
 
 h3 {
     margin-top: 0;
-    margin-bottom: 16px;
-    font-size: 16px;
+    margin-bottom: 8px;
+    font-size: 14px;
     color: #0f172a;
-    border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 10px;
+    font-weight: 700;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 8px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-shrink: 0;
 }
 
 .count-badge {
@@ -106,12 +138,13 @@ h3 {
 
 .search-box {
     position: relative;
-    margin-bottom: 12px;
+    margin-bottom: 8px;
+    flex-shrink: 0;
 }
 
 .search-input {
     width: 100%;
-    padding: 8px 32px 8px 12px;
+    padding: 6px 30px 6px 10px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     font-size: 13px;
@@ -126,7 +159,7 @@ h3 {
 
 .btn-clear {
     position: absolute;
-    right: 8px;
+    right: 6px;
     top: 50%;
     transform: translateY(-50%);
     background: transparent;
@@ -134,7 +167,7 @@ h3 {
     color: #94a3b8;
     cursor: pointer;
     font-size: 12px;
-    padding: 2px 6px;
+    padding: 2px 5px;
     border-radius: 50%;
 }
 
@@ -143,39 +176,106 @@ h3 {
     background: #f1f5f9;
 }
 
+.keys-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Skeleton Loading Animation */
+.skeleton-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.skeleton-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 10px;
+    background: #f8fafc;
+    border-radius: 4px;
+    border: 1px solid #f1f5f9;
+}
+
+.skeleton-bar {
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 4px;
+
+    li.disabled {
+        cursor: not-allowed;
+        opacity: 0.8;
+    }
+
+    .key-item-content {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        word-break: break-all;
+    }
+}
+
+.skeleton-key-name {
+    width: 65%;
+    height: 14px;
+}
+
+.skeleton-btn {
+    width: 24px;
+    height: 20px;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200px 0;
+    }
+
+    100% {
+        background-position: 200px 0;
+    }
+}
+
 ul {
     list-style: none;
     padding: 0;
     margin: 0;
-    max-height: 500px;
     overflow-y: auto;
+    flex: 1;
 }
 
 li {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 10px 12px;
-    border: 1px solid #e2e8f0;
-    margin-bottom: 6px;
-    border-radius: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 2px;
+    border-radius: 4px;
     cursor: pointer;
     transition: all 0.15s ease;
 }
 
-li:hover {
+li:hover:not(.disabled) {
     background: #f8fafc;
-    border-color: #cbd5e1;
 }
 
 li.active {
     border-color: #3b82f6;
     background: #eff6ff;
     font-weight: 600;
+    color: #2563eb;
+    border-left: 3px solid #2563eb;
 }
 
 .btn-small {
-    padding: 4px 8px;
+    padding: 3px 6px;
     font-size: 12px;
     border-radius: 4px;
     border: none;
@@ -187,16 +287,37 @@ li.active {
     color: #dc2626;
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
     background: #fca5a5;
+}
+
+.btn-danger:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
 }
 
 .loading-state,
 .empty-state {
-    color: #64748b;
-    font-size: 14px;
+    color: #94a3b8;
+    font-size: 13px;
     text-align: center;
     padding: 20px 0;
+}
+
+.spinner-sm {
+    width: 12px;
+    height: 12px;
+    border: 2px solid #cbd5e1;
+    border-top-color: #2563eb;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    display: inline-block;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 :deep(.highlight-text) {

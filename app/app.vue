@@ -19,13 +19,11 @@
 
             <!-- Dashboard Content when active universe is available -->
             <div v-if="hasCredentials" class="container">
-                <!-- DataStores Column -->
-                <DataStoresList :datastores="datastores" :loading-ds="loadingDs" :selected-ds="selectedDs"
-                    @refresh="fetchDataStores" @select-ds="fetchKeys" @delete-ds="deleteDataStore" />
-
-                <!-- Keys Column -->
-                <KeysList :selected-ds="selectedDs" :keys="keys" :loading-keys="loadingKeys" :selected-key="selectedKey"
-                    v-model:key-search-query="keySearchQuery" @select-key="fetchData" @delete-key="deleteKey" />
+                <!-- Combined DataStores & Keys Card -->
+                <DataStoresKeysCard :datastores="datastores" :loading-ds="loadingDs" :loading-keys="loadingKeys"
+                    :loading-data="loadingData" :selected-ds="selectedDs" :keys="keys" :selected-key="selectedKey"
+                    v-model:key-search-query="keySearchQuery" @refresh-ds="fetchDataStores" @select-ds="fetchKeys"
+                    @delete-ds="deleteDataStore" @select-key="fetchData" @delete-key="deleteKey" />
 
                 <!-- Data Editor Column -->
                 <DataEditor :selected-key="selectedKey" :loading-data="loadingData" :selected-data="selectedData"
@@ -253,6 +251,7 @@ const setActiveUniverse = async (id) => {
 };
 
 const fetchDataStores = async () => {
+    if (loadingDs.value) return; // Spam protection
     loadingDs.value = true;
     try {
         const res = await $fetch('/api/datastores');
@@ -277,6 +276,7 @@ const deleteDataStore = async (dsName) => {
 };
 
 const fetchKeys = async (dsName) => {
+    if (loadingKeys.value) return; // Spam protection
     selectedDs.value = dsName;
     selectedKey.value = '';
     selectedData.value = null;
@@ -307,6 +307,7 @@ const deleteKey = async (keyName) => {
 };
 
 const fetchData = async (keyName) => {
+    if (loadingData.value) return; // Spam protection
     selectedKey.value = keyName;
     selectedData.value = null;
     loadingData.value = true;
@@ -324,6 +325,7 @@ const fetchData = async (keyName) => {
 };
 
 const saveData = async () => {
+    if (savingData.value) return; // Spam protection
     savingData.value = true;
     saveDataMessage.value = '';
     try {
@@ -387,6 +389,7 @@ onMounted(() => {
     align-items: center;
     justify-content: space-between;
     padding: 0 24px;
+    flex-shrink: 0;
 }
 
 .main-header h2 {
@@ -417,11 +420,12 @@ onMounted(() => {
 
 .container {
     flex: 1;
-    display: grid;
-    grid-template-columns: 260px 280px 1fr;
+    display: flex;
     gap: 16px;
     padding: 16px;
-    overflow-y: auto;
+    overflow: hidden;
+    min-height: 0;
+    width: 100%;
 }
 
 .empty-credentials-state {

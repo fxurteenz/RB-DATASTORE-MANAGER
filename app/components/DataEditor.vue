@@ -1,7 +1,19 @@
 <template>
     <div class="box data-box">
         <h3>Data for "{{ selectedKey || '...' }}"</h3>
-        <div v-if="loadingData" class="loading-state">Loading data...</div>
+
+        <!-- Skeleton Loading State when fetching key data -->
+        <div v-if="loadingData" class="skeleton-editor">
+            <div class="skeleton-bar skeleton-tabs-bar"></div>
+            <div class="skeleton-bar skeleton-toolbar-bar"></div>
+            <div class="skeleton-code-container">
+                <div v-for="i in 10" :key="i" class="skeleton-line-row">
+                    <div class="skeleton-bar skeleton-line-num"></div>
+                    <div class="skeleton-bar skeleton-line-content" :style="{ width: `${25 + (i * 17) % 65}%` }"></div>
+                </div>
+            </div>
+        </div>
+
         <div v-else-if="selectedKey" class="editor-wrapper">
             <!-- Tab Selector -->
             <div class="editor-tabs">
@@ -13,7 +25,7 @@
                 </button>
             </div>
 
-            <!-- JSON Editor View with Syntax Highlighting -->
+            <!-- JSON Editor View with Line Numbers & Syntax Highlighting -->
             <div v-if="editorMode === 'json'" class="editor-content">
                 <!-- Toolbar -->
                 <div class="json-toolbar">
@@ -47,19 +59,31 @@
                     {{ jsonValidation.error }}
                 </div>
 
-                <!-- Editable Code Area with Syntax Highlighting Overlay -->
+                <!-- Editable Code Area with Line Numbers & Syntax Highlighting Overlay -->
                 <div v-show="jsonViewMode === 'editor'" class="code-editor-container">
-                    <pre ref="preRef" class="code-highlight"
-                        aria-hidden="true"><code v-html="highlightedJson + '\n'"></code></pre>
-                    <textarea ref="textareaRef" :value="jsonTextData"
-                        @input="$emit('update:jsonTextData', $event.target.value)" class="code-textarea"
-                        spellcheck="false" placeholder="Enter JSON here..." @scroll="syncScroll"
-                        @keydown.tab.prevent="insertTab"></textarea>
+                    <!-- Line Numbers Gutter -->
+                    <div ref="lineNumbersRef" class="line-numbers-gutter" aria-hidden="true">
+                        <div v-for="n in lineCount" :key="n" class="line-number">{{ n }}</div>
+                    </div>
+                    <!-- Editor Code Area -->
+                    <div class="editor-area">
+                        <pre ref="preRef" class="code-highlight"
+                            aria-hidden="true"><code v-html="highlightedJson + '\n'"></code></pre>
+                        <textarea ref="textareaRef" :value="jsonTextData"
+                            @input="$emit('update:jsonTextData', $event.target.value)" class="code-textarea"
+                            spellcheck="false" placeholder="Enter JSON here..." @scroll="syncScroll"
+                            @keydown.tab.prevent="insertTab"></textarea>
+                    </div>
                 </div>
 
                 <!-- Read-only Highlighted Preview -->
                 <div v-show="jsonViewMode === 'preview'" class="code-preview-container">
-                    <pre class="code-preview"><code v-html="highlightedJson"></code></pre>
+                    <div class="line-numbers-gutter" aria-hidden="true">
+                        <div v-for="n in lineCount" :key="n" class="line-number">{{ n }}</div>
+                    </div>
+                    <div class="editor-area">
+                        <pre class="code-preview"><code v-html="highlightedJson"></code></pre>
+                    </div>
                 </div>
             </div>
 
@@ -178,10 +202,16 @@ const emit = defineEmits([
 const jsonViewMode = ref('editor'); // 'editor' | 'preview'
 const textareaRef = ref(null);
 const preRef = ref(null);
+const lineNumbersRef = ref(null);
 
 const newField = ref({ key: '', type: 'string', value: '' });
 
 const isObjectData = computed(() => props.guiData !== null && typeof props.guiData === 'object' && !Array.isArray(props.guiData));
+
+const lineCount = computed(() => {
+    if (!props.jsonTextData) return 1;
+    return props.jsonTextData.split('\n').length;
+});
 
 // Real-time JSON validation
 const jsonValidation = computed(() => {
@@ -226,9 +256,14 @@ const highlightedJson = computed(() => {
 });
 
 const syncScroll = () => {
-    if (textareaRef.value && preRef.value) {
-        preRef.value.scrollTop = textareaRef.value.scrollTop;
-        preRef.value.scrollLeft = textareaRef.value.scrollLeft;
+    if (textareaRef.value) {
+        if (preRef.value) {
+            preRef.value.scrollTop = textareaRef.value.scrollTop;
+            preRef.value.scrollLeft = textareaRef.value.scrollLeft;
+        }
+        if (lineNumbersRef.value) {
+            lineNumbersRef.value.scrollTop = textareaRef.value.scrollTop;
+        }
     }
 };
 
@@ -328,6 +363,12 @@ const updateObjectField = (key, text) => {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 h3 {
@@ -337,12 +378,16 @@ h3 {
     color: #0f172a;
     border-bottom: 1px solid #e2e8f0;
     padding-bottom: 10px;
+    flex-shrink: 0;
 }
 
 .editor-wrapper {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .editor-tabs {
@@ -350,6 +395,7 @@ h3 {
     gap: 8px;
     border-bottom: 1px solid #e2e8f0;
     padding-bottom: 8px;
+    flex-shrink: 0;
 }
 
 .editor-tabs button {
@@ -369,6 +415,14 @@ h3 {
     color: white;
 }
 
+.editor-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .json-toolbar {
     display: flex;
     justify-content: space-between;
@@ -378,6 +432,7 @@ h3 {
     padding: 6px 10px;
     border-radius: 6px;
     border: 1px solid #e2e8f0;
+    flex-shrink: 0;
 }
 
 .toolbar-left {
@@ -427,16 +482,49 @@ h3 {
     border-radius: 6px;
     font-size: 12px;
     margin-bottom: 8px;
+    flex-shrink: 0;
 }
 
+/* Code Editor Container with Line Numbers Gutter */
 .code-editor-container,
 .code-preview-container {
-    position: relative;
-    height: 360px;
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     overflow: hidden;
     background: #0f172a;
+}
+
+.line-numbers-gutter {
+    width: 44px;
+    background: #1e293b;
+    border-right: 1px solid #334155;
+    color: #64748b;
+    text-align: right;
+    padding: 12px 8px 12px 0;
+    user-select: none;
+    font-family: 'Fira Code', Consolas, Monaco, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: hidden;
+    box-sizing: border-box;
+    flex-shrink: 0;
+}
+
+.line-number {
+    height: 19.5px;
+    /* Matches 13px * 1.5 line height */
+}
+
+.editor-area {
+    position: relative;
+    flex: 1;
+    height: 100%;
+    min-height: 100%;
+    overflow: hidden;
 }
 
 .code-highlight,
@@ -451,7 +539,8 @@ h3 {
     white-space: pre-wrap;
     word-break: break-all;
     box-sizing: border-box;
-    height: 100%;
+    height: 100% !important;
+    min-height: 100% !important;
     width: 100%;
 }
 
@@ -513,6 +602,10 @@ h3 {
 }
 
 /* GUI Editor */
+.gui-editor {
+    overflow-y: auto;
+}
+
 .gui-fields {
     display: flex;
     flex-direction: column;
@@ -606,7 +699,8 @@ h3 {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: 12px;
+    margin-top: 8px;
+    flex-shrink: 0;
 }
 
 .btn {
@@ -656,6 +750,73 @@ h3 {
     color: #64748b;
     font-size: 14px;
     text-align: center;
-    padding: 20px 0;
+    padding: 40px 0;
+}
+
+/* Skeleton Loading Animation for DataEditor */
+.skeleton-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    height: 100%;
+}
+
+.skeleton-bar {
+    background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.5s infinite linear;
+    border-radius: 6px;
+}
+
+.skeleton-tabs-bar {
+    height: 32px;
+    width: 200px;
+}
+
+.skeleton-toolbar-bar {
+    height: 34px;
+    width: 100%;
+}
+
+.skeleton-code-container {
+    flex: 1;
+    background: #0f172a;
+    border-radius: 6px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.skeleton-line-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.skeleton-line-num {
+    width: 20px;
+    height: 14px;
+    background: linear-gradient(90deg, #334155 25%, #475569 50%, #334155 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+.skeleton-line-content {
+    height: 14px;
+    background: linear-gradient(90deg, #1e293b 25%, #334155 50%, #1e293b 75%);
+    background-size: 400px 100%;
+    animation: shimmer 1.5s infinite linear;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -200px 0;
+    }
+
+    100% {
+        background-position: 200px 0;
+    }
 }
 </style>
