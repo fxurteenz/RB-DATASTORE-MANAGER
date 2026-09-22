@@ -1,422 +1,233 @@
 <template>
-    <div class="dashboard">
-        <div class="header">
-            <h2>Roblox DataStore Dashboard</h2>
-            <button @click="showSettings = !showSettings" class="btn">
-                {{ showSettings ? 'ปิดตั้งค่า' : 'ตั้งค่า API' }}
-            </button>
-        </div>
+    <div class="app-layout" :class="{ 'is-resizing': isResizing }">
+        <!-- SideNav (Left) -->
+        <SideNav :sidenav-width="sidenavWidth" :is-collapsed="isCollapsed" :universes="universes"
+            :editing-universe-id="editingUniverseId" @toggle-collapse="toggleCollapse" @start-resize="startResize"
+            @open-add-modal="openAddUniverseModal" @open-edit-modal="openEditUniverseModal"
+            @open-delete-modal="openDeleteUniverseModal" @set-active-universe="setActiveUniverse" />
 
-        <!-- ฟอร์มตั้งค่า API (จะแสดงเมื่อกดปุ่ม) -->
-        <div v-if="showSettings || !hasCredentials" class="settings-box">
-            <h3>ตั้งค่าระบบ (SQLite)</h3>
-
-            <div class="universe-list" v-if="universes.length">
-                <h4>Saved Universes</h4>
-                <ul>
-                    <li v-for="u in universes" :key="u.id" :class="{ active: u.is_active === 1 }">
-                        <div>
-                            <strong>{{ u.name || 'Unnamed' }}</strong> ({{ u.universe_id }})
-                        </div>
-                        <div class="actions">
-                            <button v-if="u.is_active !== 1" @click="setActiveUniverse(u.id)"
-                                class="btn-small btn-primary">Set Active</button>
-                            <span v-else class="active-badge">Active</span>
-                            <button @click="deleteUniverse(u.id)" class="btn-small btn-danger">Delete</button>
-                        </div>
-                    </li>
-                </ul>
-            </div>
-
-            <hr>
-            <h4>Add New Universe</h4>
-            <div class="form-group">
-                <label>Name (Optional):</label>
-                <input v-model="settingsForm.name" type="text" placeholder="My Game">
-            </div>
-            <div class="form-group">
-                <label>Universe ID:</label>
-                <input v-model="settingsForm.universe_id" type="text" placeholder="ตัวเลข Universe ID">
-            </div>
-            <div class="form-group">
-                <label>API Key:</label>
-                <input v-model="settingsForm.api_key" type="password" placeholder="ใส่ Roblox Open Cloud API Key">
-            </div>
-            <button @click="saveSettings" class="btn btn-primary" :disabled="saving">
-                {{ saving ? 'กำลังบันทึก...' : 'เพิ่มและตั้งเป็น Active' }}
-            </button>
-            <p v-if="saveMessage" class="msg">{{ saveMessage }}</p>
-        </div>
-
-        <hr v-if="hasCredentials">
-
-        <!-- ส่วนแสดงผล DataStore -->
-        <div v-if="hasCredentials && !showSettings" class="container">
-            <!-- กล่อง DataStores -->
-            <div class="box">
-                <h3>DataStores <button @click="fetchDataStores" class="btn-small">รีเฟรช</button></h3>
-                <ul v-if="datastores.length">
-                    <li v-for="ds in datastores" :key="ds.name" :class="{ active: selectedDs === ds.name }">
-                        <div @click="fetchKeys(ds.name)" style="flex:1">{{ ds.name }}</div>
-                        <button @click.stop="deleteDataStore(ds.name)" class="btn-small btn-danger"
-                            title="Delete DataStore">🗑️</button>
-                    </li>
-                </ul>
-                <div v-else-if="loadingDs" class="loading-state">Loading DataStores...</div>
-                <div v-else class="empty-state">No DataStores found.</div>
-            </div>
-
-            <!-- กล่อง Keys -->
-            <div class="box">
-                <h3>
-                    <span>Keys in "{{ selectedDs || '...' }}"</span>
-                    <span v-if="keys.length" class="count-badge">
-                        {{ keySearchQuery ? `${filteredKeys.length}/${keys.length}` : keys.length }}
-                    </span>
-                </h3>
-
-                <!-- กล่องค้นหา Key -->
-                <div v-if="selectedDs && keys.length" class="search-box">
-                    <input v-model="keySearchQuery" type="text" placeholder="🔍 ค้นหา Key..." class="search-input">
-                    <button v-if="keySearchQuery" @click="keySearchQuery = ''" class="btn-clear"
-                        title="ล้างคำค้นหา">✕</button>
+        <!-- Main Content Area (Right) -->
+        <main class="main-panel">
+            <header class="main-header">
+                <h2>Roblox DataStore Dashboard</h2>
+                <div v-if="activeUniverse" class="active-universe-badge">
+                    <span class="status-pulse"></span>
+                    <span>Active: <strong>{{ activeUniverse.name || 'Unnamed' }}</strong> ({{ activeUniverse.universe_id
+                    }})</span>
                 </div>
+            </header>
 
-                <ul v-if="filteredKeys.length">
-                    <li v-for="k in filteredKeys" :key="k.key" :class="{ active: selectedKey === k.key }">
-                        <div @click="fetchData(k.key)" style="flex:1; word-break: break-all;">
-                            <span v-html="highlightMatch(k.key, keySearchQuery)"></span>
-                        </div>
-                        <button @click.stop="deleteKey(k.key)" class="btn-small btn-danger"
-                            title="Delete Key">🗑️</button>
-                    </li>
-                </ul>
-                <div v-else-if="loadingKeys" class="loading-state">Loading keys...</div>
-                <div v-else-if="!selectedDs" class="empty-state">Select a DataStore first</div>
-                <div v-else-if="keys.length && !filteredKeys.length" class="empty-state">
-                    ไม่พบ Key ที่ตรงกับ "{{ keySearchQuery }}"
-                </div>
-                <div v-else class="empty-state">No keys found.</div>
+            <!-- Dashboard Content when active universe is available -->
+            <div v-if="hasCredentials" class="container">
+                <!-- DataStores Column -->
+                <DataStoresList :datastores="datastores" :loading-ds="loadingDs" :selected-ds="selectedDs"
+                    @refresh="fetchDataStores" @select-ds="fetchKeys" @delete-ds="deleteDataStore" />
+
+                <!-- Keys Column -->
+                <KeysList :selected-ds="selectedDs" :keys="keys" :loading-keys="loadingKeys" :selected-key="selectedKey"
+                    v-model:key-search-query="keySearchQuery" @select-key="fetchData" @delete-key="deleteKey" />
+
+                <!-- Data Editor Column -->
+                <DataEditor :selected-key="selectedKey" :loading-data="loadingData" :selected-data="selectedData"
+                    v-model:editor-mode="editorMode" v-model:json-text-data="jsonTextData" v-model:gui-data="guiData"
+                    :saving-data="savingData" :save-data-message="saveDataMessage" @save-data="saveData" />
             </div>
 
-            <!-- กล่อง Data Editor -->
-            <div class="box data-box">
-                <h3>Data for "{{ selectedKey || '...' }}"</h3>
-                <div v-if="loadingData" class="loading-state">Loading data...</div>
-                <div v-else-if="selectedKey" class="editor-wrapper">
-                    <!-- Tab Selector -->
-                    <div class="editor-tabs">
-                        <button @click="editorMode = 'json'" :class="{ active: editorMode === 'json' }">
-                            📝 JSON Editor
-                        </button>
-                        <button @click="editorMode = 'gui'" :class="{ active: editorMode === 'gui' }">
-                            📋 GUI Form
-                        </button>
-                    </div>
-
-                    <!-- JSON Editor View with Syntax Highlighting -->
-                    <div v-if="editorMode === 'json'" class="editor-content">
-                        <!-- Toolbar -->
-                        <div class="json-toolbar">
-                            <div class="toolbar-left">
-                                <button class="btn-tool" @click="formatJson" title="Format JSON (Indent 4 spaces)">
-                                    ✨ Format
-                                </button>
-                                <button class="btn-tool" @click="minifyJson" title="Minify JSON">
-                                    📦 Minify
-                                </button>
-                                <button class="btn-tool" @click="copyJson" title="Copy to clipboard">
-                                    📋 Copy
-                                </button>
-                                <button class="btn-tool" :class="{ active: jsonViewMode === 'preview' }"
-                                    @click="toggleJsonViewMode">
-                                    {{ jsonViewMode === 'editor' ? '👁️ Preview' : '✏️ Edit' }}
-                                </button>
-                            </div>
-                            <div class="toolbar-right">
-                                <span v-if="jsonValidation.valid" class="badge-valid">
-                                    ✅ Valid JSON
-                                </span>
-                                <span v-else class="badge-invalid" :title="jsonValidation.error">
-                                    ⚠️ Syntax Error
-                                </span>
-                            </div>
-                        </div>
-
-                        <!-- Error Banner if invalid -->
-                        <div v-if="!jsonValidation.valid" class="syntax-error-banner">
-                            {{ jsonValidation.error }}
-                        </div>
-
-                        <!-- Editable Code Area with Syntax Highlighting Overlay -->
-                        <div v-show="jsonViewMode === 'editor'" class="code-editor-container">
-                            <pre ref="preRef" class="code-highlight"
-                                aria-hidden="true"><code v-html="highlightedJson + '\n'"></code></pre>
-                            <textarea ref="textareaRef" v-model="jsonTextData" class="code-textarea" spellcheck="false"
-                                placeholder="Enter JSON here..." @scroll="syncScroll"
-                                @keydown.tab.prevent="insertTab"></textarea>
-                        </div>
-
-                        <!-- Read-only Highlighted Preview with Line Numbers -->
-                        <div v-show="jsonViewMode === 'preview'" class="code-preview-container">
-                            <pre class="code-preview"><code v-html="highlightedJson"></code></pre>
-                        </div>
-                    </div>
-
-                    <!-- GUI Form View -->
-                    <div v-if="editorMode === 'gui'" class="editor-content gui-editor">
-                        <div v-if="isObjectData" class="gui-fields">
-                            <div v-for="(val, key) in guiData" :key="key" class="gui-field-row">
-                                <div class="field-info">
-                                    <label class="field-key">{{ key }}</label>
-                                    <span class="field-type-badge">{{ typeof val }}</span>
-                                </div>
-                                <div class="field-input-wrapper">
-                                    <input v-if="typeof val === 'number'" type="number" v-model.number="guiData[key]"
-                                        class="gui-input">
-                                    <input v-else-if="typeof val === 'boolean'" type="checkbox" v-model="guiData[key]"
-                                        class="gui-checkbox">
-                                    <input v-else-if="typeof val === 'string'" type="text" v-model="guiData[key]"
-                                        class="gui-input">
-                                    <textarea v-else-if="typeof val === 'object'" :value="JSON.stringify(val)"
-                                        @change="e => updateObjectField(key, e.target.value)" class="gui-textarea"
-                                        rows="2"></textarea>
-                                    <input v-else type="text" v-model="guiData[key]" class="gui-input">
-                                </div>
-                                <button @click="deleteGuiField(key)" class="btn-small btn-danger field-delete-btn"
-                                    title="Delete field">✕</button>
-                            </div>
-
-                            <!-- Add new property row -->
-                            <div class="gui-add-row">
-                                <h5>+ เพิ่ม Property ใหม่</h5>
-                                <div class="add-inputs">
-                                    <input v-model="newField.key" type="text" placeholder="Key name"
-                                        class="gui-input-small">
-                                    <select v-model="newField.type" class="gui-select">
-                                        <option value="string">String</option>
-                                        <option value="number">Number</option>
-                                        <option value="boolean">Boolean</option>
-                                    </select>
-                                    <input v-if="newField.type === 'number'" v-model.number="newField.value"
-                                        type="number" placeholder="0" class="gui-input-small">
-                                    <select v-else-if="newField.type === 'boolean'" v-model="newField.value"
-                                        class="gui-select">
-                                        <option :value="true">true</option>
-                                        <option :value="false">false</option>
-                                    </select>
-                                    <input v-else v-model="newField.value" type="text" placeholder="Value"
-                                        class="gui-input-small">
-                                    <button @click="addGuiField" class="btn-small btn-primary">Add</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div v-else class="gui-simple">
-                            <label>Primitive Value ({{ typeof guiData }}):</label>
-                            <input type="text" v-model="guiData" class="gui-input">
-                        </div>
-                    </div>
-
-                    <!-- Save Action Button -->
-                    <div class="editor-actions">
-                        <button @click="saveData" class="btn btn-primary btn-save"
-                            :disabled="savingData || (editorMode === 'json' && !jsonValidation.valid)">
-                            {{ savingData ? 'กำลังบันทึก...' : '💾 บันทึกข้อมูล (Save Data)' }}
-                        </button>
-                        <span v-if="saveDataMessage" class="save-status-msg">{{ saveDataMessage }}</span>
-                    </div>
+            <!-- Empty Credentials State -->
+            <div v-else class="empty-credentials-state">
+                <div class="empty-card">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"
+                        style="margin-bottom: 12px; color: #94a3b8;">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+                        <path d="M2 12h20" />
+                    </svg>
+                    <h3>No Active Universe Selected</h3>
+                    <p>Please select an existing Universe or add a new one from the sidebar.</p>
+                    <button class="btn btn-primary" @click="openAddUniverseModal">+ Add Universe</button>
                 </div>
-                <div v-else class="empty-state">Select a Key to view and edit data</div>
             </div>
-        </div>
+        </main>
+
+        <!-- Universe Form Modal (Add / Edit) -->
+        <UniverseModal :show="showUniverseModal" :editing-universe-id="editingUniverseId"
+            v-model:settings-form="settingsForm" v-model:show-api-key="showApiKey" :saving="saving"
+            :save-message="saveMessage" @close="closeUniverseModal" @save="saveUniverseFromModal" />
+
+        <!-- Delete Confirmation Modal -->
+        <DeleteUniverseModal :show="showDeleteUniverseModal" :universe-to-delete="universeToDelete"
+            :deleting-universe="deletingUniverse" @close="closeDeleteUniverseModal" @confirm="confirmDeleteUniverse" />
     </div>
 </template>
 
 <script setup>
-const showSettings = ref(false);
+import { ref, computed, onMounted } from 'vue';
+
+// SideNav State & Resizing
+const sidenavWidth = ref(280);
+const isCollapsed = ref(false);
+const isResizing = ref(false);
+
+const startResize = () => {
+    isResizing.value = true;
+    window.addEventListener('mousemove', handleResize);
+    window.addEventListener('mouseup', stopResize);
+};
+
+const handleResize = (e) => {
+    if (!isResizing.value) return;
+    const newWidth = e.clientX;
+    if (newWidth < 140) {
+        isCollapsed.value = true;
+    } else {
+        isCollapsed.value = false;
+        sidenavWidth.value = Math.max(180, Math.min(newWidth, 480));
+    }
+};
+
+const stopResize = () => {
+    isResizing.value = false;
+    window.removeEventListener('mousemove', handleResize);
+    window.removeEventListener('mouseup', stopResize);
+};
+
+const toggleCollapse = () => {
+    isCollapsed.value = !isCollapsed.value;
+    if (!isCollapsed.value && sidenavWidth.value < 180) {
+        sidenavWidth.value = 280;
+    }
+};
+
+// Universe Modals State
+const showUniverseModal = ref(false);
+const showDeleteUniverseModal = ref(false);
+const universeToDelete = ref(null);
+const deletingUniverse = ref(false);
+
 const saving = ref(false);
 const saveMessage = ref('');
 const settingsForm = ref({ name: '', universe_id: '', api_key: '' });
+const editingUniverseId = ref(null);
+const showApiKey = ref(false);
+
 const universes = ref([]);
 const activeUniverse = ref(null);
 
 const hasCredentials = computed(() => !!activeUniverse.value);
 
+// DataStores & Keys State
 const datastores = ref([]);
+const loadingDs = ref(false);
+const selectedDs = ref('');
+
 const keys = ref([]);
 const keySearchQuery = ref('');
-const selectedDs = ref('');
+const loadingKeys = ref(false);
 const selectedKey = ref('');
+
+// Data Editor State
 const selectedData = ref(null);
-
-const filteredKeys = computed(() => {
-    if (!keySearchQuery.value.trim()) return keys.value;
-    const q = keySearchQuery.value.toLowerCase().trim();
-    return keys.value.filter(k => k.key.toLowerCase().includes(q));
-});
-
-const highlightMatch = (text, query) => {
-    if (!query || !query.trim()) return text;
-    const escapedQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`(${escapedQuery})`, 'gi');
-    return text.replace(regex, '<mark class="highlight-text">$1</mark>');
-};
-
-// Editor states
+const loadingData = ref(false);
 const editorMode = ref('json');
-const jsonViewMode = ref('editor'); // 'editor' | 'preview'
 const jsonTextData = ref('');
 const guiData = ref(null);
 const savingData = ref(false);
 const saveDataMessage = ref('');
 
-const textareaRef = ref(null);
-const preRef = ref(null);
+// Universe Handlers
+const openAddUniverseModal = () => {
+    editingUniverseId.value = null;
+    settingsForm.value = { name: '', universe_id: '', api_key: '' };
+    saveMessage.value = '';
+    showUniverseModal.value = true;
+};
 
-const newField = ref({ key: '', type: 'string', value: '' });
+const openEditUniverseModal = (u) => {
+    editingUniverseId.value = u.id;
+    settingsForm.value = {
+        name: u.name || '',
+        universe_id: u.universe_id || '',
+        api_key: u.api_key || '',
+    };
+    saveMessage.value = '';
+    showUniverseModal.value = true;
+};
 
-const loadingDs = ref(false);
-const loadingKeys = ref(false);
-const loadingData = ref(false);
+const closeUniverseModal = () => {
+    showUniverseModal.value = false;
+    editingUniverseId.value = null;
+    settingsForm.value = { name: '', universe_id: '', api_key: '' };
+    saveMessage.value = '';
+};
 
-const isObjectData = computed(() => guiData.value !== null && typeof guiData.value === 'object' && !Array.isArray(guiData.value));
+const openDeleteUniverseModal = (u) => {
+    universeToDelete.value = u;
+    showDeleteUniverseModal.value = true;
+};
 
-// Real-time JSON validation
-const jsonValidation = computed(() => {
-    if (!jsonTextData.value.trim()) return { valid: true, error: '' };
+const closeDeleteUniverseModal = () => {
+    showDeleteUniverseModal.value = false;
+    universeToDelete.value = null;
+};
+
+const confirmDeleteUniverse = async () => {
+    if (!universeToDelete.value) return;
+    deletingUniverse.value = true;
     try {
-        JSON.parse(jsonTextData.value);
-        return { valid: true, error: '' };
-    } catch (err) {
-        return { valid: false, error: err.message };
+        await $fetch('/api/settings', {
+            method: 'POST',
+            body: { action: 'delete', id: universeToDelete.value.id }
+        });
+        closeDeleteUniverseModal();
+        await loadSettings();
+    } catch {
+        alert("เกิดข้อผิดพลาดในการลบ Universe");
+    } finally {
+        deletingUniverse.value = false;
     }
-});
+};
 
-// JSON Syntax Highlighting Tokenizer
-const highlightedJson = computed(() => {
-    const text = jsonTextData.value;
-    if (!text) return '';
-
-    // Escape HTML special characters
-    const htmlEscaped = text
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-
-    // Regex tokenizer for JSON elements
-    return htmlEscaped.replace(
-        /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?|[{}[\],:])/g,
-        (match) => {
-            if (/^"/.test(match)) {
-                if (/:$/.test(match.trim())) {
-                    const colonIndex = match.lastIndexOf(':');
-                    const keyPart = match.slice(0, colonIndex);
-                    const colonPart = match.slice(colonIndex);
-                    return `<span class="hl-key">${keyPart}</span><span class="hl-punct">${colonPart}</span>`;
+const saveUniverseFromModal = async () => {
+    if (!settingsForm.value.universe_id) {
+        saveMessage.value = 'กรุณากรอก Universe ID';
+        return;
+    }
+    saving.value = true;
+    saveMessage.value = '';
+    try {
+        if (editingUniverseId.value) {
+            await $fetch('/api/settings', {
+                method: 'POST',
+                body: {
+                    action: 'update',
+                    id: editingUniverseId.value,
+                    ...settingsForm.value
                 }
-                return `<span class="hl-string">${match}</span>`;
+            });
+            saveMessage.value = 'บันทึกการแก้ไขสำเร็จ!';
+            editingUniverseId.value = null;
+            closeUniverseModal();
+        } else {
+            if (!settingsForm.value.api_key) {
+                saveMessage.value = 'กรุณากรอก API Key';
+                saving.value = false;
+                return;
             }
-            if (/true|false/.test(match)) {
-                return `<span class="hl-bool">${match}</span>`;
-            }
-            if (/null/.test(match)) {
-                return `<span class="hl-null">${match}</span>`;
-            }
-            if (/^-?\d/.test(match)) {
-                return `<span class="hl-number">${match}</span>`;
-            }
-            if (/[{}[\],:]/.test(match)) {
-                return `<span class="hl-punct">${match}</span>`;
-            }
-            return match;
+            await $fetch('/api/settings', {
+                method: 'POST',
+                body: { action: 'add', ...settingsForm.value }
+            });
+            saveMessage.value = 'เพิ่มสำเร็จ!';
+            closeUniverseModal();
         }
-    );
-});
-
-// Synchronize scroll between textarea and highlighted <pre>
-const syncScroll = () => {
-    if (textareaRef.value && preRef.value) {
-        preRef.value.scrollTop = textareaRef.value.scrollTop;
-        preRef.value.scrollLeft = textareaRef.value.scrollLeft;
-    }
-};
-
-// Handle Tab key inside textarea
-const insertTab = (e) => {
-    const textarea = e.target;
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const spaces = '    ';
-    jsonTextData.value = jsonTextData.value.substring(0, start) + spaces + jsonTextData.value.substring(end);
-    nextTick(() => {
-        textarea.selectionStart = textarea.selectionEnd = start + spaces.length;
-        syncScroll();
-    });
-};
-
-// Format / Prettify JSON
-const formatJson = () => {
-    try {
-        const parsed = JSON.parse(jsonTextData.value);
-        jsonTextData.value = JSON.stringify(parsed, null, 4);
-        nextTick(syncScroll);
+        settingsForm.value = { name: '', universe_id: '', api_key: '' };
+        await loadSettings();
     } catch (err) {
-        alert("ไม่สามารถจัดรูปแบบได้: ไวยากรณ์ JSON ไม่ถูกต้อง\n" + err.message);
-    }
-};
-
-// Minify JSON
-const minifyJson = () => {
-    try {
-        const parsed = JSON.parse(jsonTextData.value);
-        jsonTextData.value = JSON.stringify(parsed);
-        nextTick(syncScroll);
-    } catch (err) {
-        alert("ไม่สามารถย่อได้: ไวยากรณ์ JSON ไม่ถูกต้อง\n" + err.message);
-    }
-};
-
-// Copy JSON to clipboard
-const copyJson = async () => {
-    try {
-        await navigator.clipboard.writeText(jsonTextData.value);
-        alert("คัดลอก JSON เรียบร้อยแล้ว!");
-    } catch {
-        alert("ไม่สามารถคัดลอกได้");
-    }
-};
-
-const toggleJsonViewMode = () => {
-    jsonViewMode.value = jsonViewMode.value === 'editor' ? 'preview' : 'editor';
-    if (jsonViewMode.value === 'editor') {
-        nextTick(syncScroll);
-    }
-};
-
-// GUI Form Helpers
-const deleteGuiField = (key) => {
-    if (confirm(`ลบฟิลด์ "${key}" หรือไม่?`)) {
-        delete guiData.value[key];
-        jsonTextData.value = JSON.stringify(guiData.value, null, 4);
-    }
-};
-
-const addGuiField = () => {
-    if (!newField.value.key.trim()) return;
-    let val = newField.value.value;
-    if (newField.value.type === 'number') val = Number(val) || 0;
-    if (newField.value.type === 'boolean') val = Boolean(val);
-    guiData.value[newField.value.key.trim()] = val;
-    jsonTextData.value = JSON.stringify(guiData.value, null, 4);
-    newField.value = { key: '', type: 'string', value: '' };
-};
-
-const updateObjectField = (key, text) => {
-    try {
-        guiData.value[key] = JSON.parse(text);
-        jsonTextData.value = JSON.stringify(guiData.value, null, 4);
-    } catch {
-        // keep as is
+        saveMessage.value = 'เกิดข้อผิดพลาดในการบันทึก: ' + (err.data?.message || err.message);
+    } finally {
+        saving.value = false;
+        setTimeout(() => saveMessage.value = '', 3500);
     }
 };
 
@@ -429,35 +240,10 @@ const loadSettings = async () => {
 
             if (hasCredentials.value) {
                 fetchDataStores();
-            } else {
-                showSettings.value = true;
             }
         }
     } catch (err) {
-        console.error('Failed to load settings');
-    }
-};
-
-const saveSettings = async () => {
-    if (!settingsForm.value.universe_id || !settingsForm.value.api_key) {
-        saveMessage.value = 'กรุณากรอกข้อมูลให้ครบ';
-        return;
-    }
-    saving.value = true;
-    saveMessage.value = '';
-    try {
-        await $fetch('/api/settings', {
-            method: 'POST',
-            body: { action: 'add', ...settingsForm.value }
-        });
-        saveMessage.value = 'เพิ่มสำเร็จ!';
-        settingsForm.value = { name: '', universe_id: '', api_key: '' };
-        await loadSettings();
-    } catch (err) {
-        saveMessage.value = 'เกิดข้อผิดพลาดในการบันทึก';
-    } finally {
-        saving.value = false;
-        setTimeout(() => saveMessage.value = '', 3000);
+        console.error('Failed to load settings', err);
     }
 };
 
@@ -466,19 +252,12 @@ const setActiveUniverse = async (id) => {
     await loadSettings();
 };
 
-const deleteUniverse = async (id) => {
-    if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบ Universe นี้?")) {
-        await $fetch('/api/settings', { method: 'POST', body: { action: 'delete', id } });
-        await loadSettings();
-    }
-};
-
 const fetchDataStores = async () => {
     loadingDs.value = true;
     try {
         const res = await $fetch('/api/datastores');
         datastores.value = res.datastores || [];
-    } catch (err) {
+    } catch {
         alert("ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบ API Key");
     } finally {
         loadingDs.value = false;
@@ -491,7 +270,7 @@ const deleteDataStore = async (dsName) => {
             await $fetch(`/api/datastores/${encodeURIComponent(dsName)}`, { method: 'DELETE' });
             alert(`DataStore "${dsName}" ถูกกำหนดเวลาลบเรียบร้อยแล้ว`);
             fetchDataStores();
-        } catch (err) {
+        } catch {
             alert("ไม่สามารถลบ DataStore ได้");
         }
     }
@@ -507,7 +286,7 @@ const fetchKeys = async (dsName) => {
     try {
         const res = await $fetch(`/api/datastores/${encodeURIComponent(dsName)}/keys`);
         keys.value = res.keys || [];
-    } catch (err) {
+    } catch {
         alert("Failed to load keys");
     } finally {
         loadingKeys.value = false;
@@ -521,7 +300,7 @@ const deleteKey = async (keyName) => {
             alert("ลบ Key สำเร็จแล้ว");
             if (selectedKey.value === keyName) selectedKey.value = '';
             fetchKeys(selectedDs.value);
-        } catch (err) {
+        } catch {
             alert("ไม่สามารถลบ Key ได้");
         }
     }
@@ -537,8 +316,7 @@ const fetchData = async (keyName) => {
         selectedData.value = res;
         jsonTextData.value = JSON.stringify(res, null, 4);
         guiData.value = typeof res === 'object' && res !== null ? JSON.parse(JSON.stringify(res)) : res;
-        nextTick(syncScroll);
-    } catch (err) {
+    } catch {
         alert("Failed to load data");
     } finally {
         loadingData.value = false;
@@ -551,11 +329,6 @@ const saveData = async () => {
     try {
         let payloadToSave;
         if (editorMode.value === 'json') {
-            if (!jsonValidation.value.valid) {
-                alert("กรุณาแก้ไขไวยากรณ์ JSON ให้ถูกต้องก่อนบันทึก:\n" + jsonValidation.value.error);
-                savingData.value = false;
-                return;
-            }
             payloadToSave = JSON.parse(jsonTextData.value);
             guiData.value = typeof payloadToSave === 'object' && payloadToSave !== null
                 ? JSON.parse(JSON.stringify(payloadToSave))
@@ -585,139 +358,115 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.dashboard {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    margin: 20px;
-    background: #f4f4f9;
-    min-height: 100vh;
-    color: #333;
-}
-
-.header {
+.app-layout {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
 }
 
-.header h2 {
-    margin: 0;
-    font-size: 24px;
-    color: #1a202c;
+.app-layout.is-resizing {
+    user-select: none;
 }
 
-.settings-box {
+.main-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.main-header {
+    height: 60px;
     background: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
 }
 
-.form-group {
-    margin-bottom: 15px;
+.main-header h2 {
+    margin: 0;
+    font-size: 18px;
+    color: #0f172a;
+    font-weight: 700;
 }
 
-.form-group label {
-    display: block;
-    margin-bottom: 5px;
-    font-weight: bold;
+.active-universe-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    background: #f1f5f9;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    color: #334155;
 }
 
-.form-group input {
-    width: 100%;
-    max-width: 400px;
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-}
-
-.btn {
-    padding: 8px 15px;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    background: #6c757d;
-    color: white;
-}
-
-.btn-primary {
-    background: #007bff;
-}
-
-.btn:hover {
-    opacity: 0.9;
-}
-
-.btn-small {
-    padding: 3px 8px;
-    font-size: 12px;
-    float: right;
-}
-
-.msg {
-    color: green;
-    margin-top: 10px;
-}
-
-hr {
-    border: 0;
-    border-top: 1px solid #ddd;
-    margin: 20px 0;
+.status-pulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
 }
 
 .container {
-    display: flex;
-    gap: 20px;
-}
-
-.box {
-    background: white;
-    padding: 15px;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     flex: 1;
-    height: 75vh;
+    display: grid;
+    grid-template-columns: 260px 280px 1fr;
+    gap: 16px;
+    padding: 16px;
     overflow-y: auto;
 }
 
-.data-box {
-    flex: 2;
+.empty-credentials-state {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
 }
 
-ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
+.empty-card {
+    text-align: center;
+    background: white;
+    padding: 40px 60px;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    max-width: 400px;
 }
 
-li {
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
+.empty-card h3 {
+    margin: 0 0 8px 0;
+    color: #0f172a;
+}
+
+.empty-card p {
+    color: #64748b;
+    font-size: 14px;
+    margin-bottom: 20px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    border: none;
     cursor: pointer;
 }
 
-li:hover {
-    background: #e0f7fa;
+.btn-primary {
+    background: #2563eb;
+    color: white;
 }
 
-li.active {
-    background: #b2ebf2;
-    font-weight: bold;
-}
-
-h3 {
-    margin-top: 0;
-    border-bottom: 2px solid #007bff;
-    padding-bottom: 5px;
-}
-
-pre {
-    background: #2d2d2d;
-    color: #f8f8f2;
-    padding: 15px;
-    border-radius: 5px;
-    overflow-x: auto;
-    white-space: pre-wrap;
+.btn-primary:hover {
+    background: #1d4ed8;
 }
 </style>
