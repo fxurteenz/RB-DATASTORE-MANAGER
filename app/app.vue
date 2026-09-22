@@ -10,6 +10,30 @@
         <!-- ฟอร์มตั้งค่า API (จะแสดงเมื่อกดปุ่ม) -->
         <div v-if="showSettings || !hasCredentials" class="settings-box">
             <h3>ตั้งค่าระบบ (SQLite)</h3>
+
+            <div class="universe-list" v-if="universes.length">
+                <h4>Saved Universes</h4>
+                <ul>
+                    <li v-for="u in universes" :key="u.id" :class="{ active: u.is_active === 1 }">
+                        <div>
+                            <strong>{{ u.name || 'Unnamed' }}</strong> ({{ u.universe_id }})
+                        </div>
+                        <div class="actions">
+                            <button v-if="u.is_active !== 1" @click="setActiveUniverse(u.id)"
+                                class="btn-small btn-primary">Set Active</button>
+                            <span v-else class="active-badge">Active</span>
+                            <button @click="deleteUniverse(u.id)" class="btn-small btn-danger">Delete</button>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+
+            <hr>
+            <h4>Add New Universe</h4>
+            <div class="form-group">
+                <label>Name (Optional):</label>
+                <input v-model="settingsForm.name" type="text" placeholder="My Game">
+            </div>
             <div class="form-group">
                 <label>Universe ID:</label>
                 <input v-model="settingsForm.universe_id" type="text" placeholder="ตัวเลข Universe ID">
@@ -19,7 +43,7 @@
                 <input v-model="settingsForm.api_key" type="password" placeholder="ใส่ Roblox Open Cloud API Key">
             </div>
             <button @click="saveSettings" class="btn btn-primary" :disabled="saving">
-                {{ saving ? 'กำลังบันทึก...' : 'บันทึกการตั้งค่า' }}
+                {{ saving ? 'กำลังบันทึก...' : 'เพิ่มและตั้งเป็น Active' }}
             </button>
             <p v-if="saveMessage" class="msg">{{ saveMessage }}</p>
         </div>
@@ -105,18 +129,21 @@ const loadSettings = async () => {
     }
 };
 
-// 2. บันทึกการตั้งค่าลง SQLite
 const saveSettings = async () => {
+    if (!settingsForm.value.universe_id || !settingsForm.value.api_key) {
+        saveMessage.value = 'กรุณากรอกข้อมูลให้ครบ';
+        return;
+    }
     saving.value = true;
     saveMessage.value = '';
     try {
         await $fetch('/api/settings', {
             method: 'POST',
-            body: settingsForm.value
+            body: { action: 'add', ...settingsForm.value }
         });
-        saveMessage.value = 'บันทึกสำเร็จ!';
-        showSettings.value = false; // ซ่อนหน้าตั้งค่า
-        fetchDataStores(); // โหลดข้อมูลใหม่
+        saveMessage.value = 'เพิ่มสำเร็จ!';
+        settingsForm.value = { name: '', universe_id: '', api_key: '' };
+        await loadSettings();
     } catch (err) {
         saveMessage.value = 'เกิดข้อผิดพลาดในการบันทึก';
     } finally {
@@ -125,7 +152,18 @@ const saveSettings = async () => {
     }
 };
 
-// 3. ฟังก์ชันดึง DataStore
+const setActiveUniverse = async (id) => {
+    await $fetch('/api/settings', { method: 'POST', body: { action: 'set_active', id } });
+    await loadSettings();
+};
+
+const deleteUniverse = async (id) => {
+    if (confirm("คุณแน่ใจหรือไม่ว่าต้องการลบ Universe นี้?")) {
+        await $fetch('/api/settings', { method: 'POST', body: { action: 'delete', id } });
+        await loadSettings();
+    }
+};
+
 const fetchDataStores = async () => {
     loadingDs.value = true;
     try {
