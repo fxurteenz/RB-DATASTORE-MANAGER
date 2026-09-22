@@ -1,8 +1,11 @@
 import { db } from "../../utils/db";
 
 export default defineEventHandler((event) => {
-    const settings = db
-        .prepare("SELECT universe_id, api_key FROM settings WHERE id = 1")
-        .get();
-    return settings;
+    const universes = db.prepare("SELECT * FROM universes").all();
+    const activeUniverse =
+        universes.find((u: any) => u.is_active === 1) || null;
+    return {
+        universes,
+        active_universe: activeUniverse,
+    };
 });
