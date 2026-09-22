@@ -26,3 +26,5 @@ logs
 .prettierrc
 
 *.db
+
+.skills
