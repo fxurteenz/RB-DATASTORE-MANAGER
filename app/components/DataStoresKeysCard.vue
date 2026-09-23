@@ -3,9 +3,12 @@
         <!-- Top Section: DataStoresList -->
         <div class="section-top" :style="topSectionStyle">
             <DataStoresList :datastores="datastores" :loading-ds="loadingDs" :loading-keys="loadingKeys"
-                :selected-ds="selectedDs" :is-collapsed="isDsCollapsed" @refresh="$emit('refresh-ds')"
-                @select-data-store="$emit('select-ds', $event)" @delete-data-store="$emit('delete-ds', $event)"
-                @toggle-collapse="toggleDsCollapse" />
+                :selected-ds="selectedDs" :is-collapsed="isDsCollapsed" :limit="dsLimit"
+                :next-page-token="dsNextPageToken" :has-prev-page="dsHasPrevPage" :page-number="dsPageNumber"
+                @refresh="$emit('refresh-ds')" @select-data-store="$emit('select-ds', $event)"
+                @delete-data-store="$emit('delete-ds', $event)" @toggle-collapse="toggleDsCollapse"
+                @update:limit="$emit('update:dsLimit', $event)" @next-page="$emit('nextDsPage')"
+                @prev-page="$emit('prevDsPage')" />
         </div>
 
         <!-- Vertical Resizer Handle (Between DataStores & Keys) -->
@@ -17,9 +20,12 @@
         <!-- Bottom Section: KeysList -->
         <div class="section-bottom">
             <KeysList :selected-ds="selectedDs" :keys="keys" :loading-keys="loadingKeys" :loading-data="loadingData"
-                :selected-key="selectedKey" :key-search-query="keySearchQuery"
+                :selected-key="selectedKey" :key-search-query="keySearchQuery" :limit="keyLimit"
+                :next-page-token="keyNextPageToken" :has-prev-page="keyHasPrevPage" :page-number="keyPageNumber"
                 @update:key-search-query="$emit('update:keySearchQuery', $event)"
-                @select-key="$emit('select-key', $event)" @delete-key="$emit('delete-key', $event)" />
+                @select-key="$emit('select-key', $event)" @delete-key="$emit('delete-key', $event)"
+                @update:limit="$emit('update:keyLimit', $event)" @next-page="$emit('nextKeyPage')"
+                @prev-page="$emit('prevKeyPage')" />
         </div>
 
         <!-- Horizontal Resizer Handle (Card Width) -->
@@ -38,7 +44,15 @@ defineProps({
     selectedDs: { type: String, default: '' },
     keys: { type: Array, default: () => [] },
     selectedKey: { type: String, default: '' },
-    keySearchQuery: { type: String, default: '' }
+    keySearchQuery: { type: String, default: '' },
+    dsLimit: { type: Number, default: 10 },
+    dsNextPageToken: { type: String, default: null },
+    dsHasPrevPage: { type: Boolean, default: false },
+    dsPageNumber: { type: Number, default: 1 },
+    keyLimit: { type: Number, default: 10 },
+    keyNextPageToken: { type: String, default: null },
+    keyHasPrevPage: { type: Boolean, default: false },
+    keyPageNumber: { type: Number, default: 1 }
 });
 
 defineEmits([
@@ -47,7 +61,13 @@ defineEmits([
     'delete-ds',
     'update:keySearchQuery',
     'select-key',
-    'delete-key'
+    'delete-key',
+    'update:dsLimit',
+    'nextDsPage',
+    'prevDsPage',
+    'update:keyLimit',
+    'nextKeyPage',
+    'prevKeyPage'
 ]);
 
 // Layout & Resizing States

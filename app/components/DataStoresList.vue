@@ -38,6 +38,27 @@
             </div>
             <div v-else class="empty-state">No DataStores found.</div>
         </div>
+
+        <!-- Pagination Controls Bar using Roblox API nextPageToken / Cursor -->
+        <div v-if="!isCollapsed && (datastores.length > 0 || hasPrevPage || nextPageToken)" class="pagination-bar">
+            <div class="pagination-info">
+                <span>Page {{ pageNumber }}</span>
+                <select :value="limit" @change="$emit('update:limit', Number($event.target.value))"
+                    class="select-per-page">
+                    <option :value="5">5/page</option>
+                    <option :value="10">10/page</option>
+                    <option :value="20">20/page</option>
+                    <option :value="50">50/page</option>
+                    <option :value="100">100/page</option>
+                </select>
+            </div>
+            <div class="pagination-controls">
+                <button class="btn-page" :disabled="!hasPrevPage || loadingDs" @click="$emit('prevPage')"
+                    title="Previous Page">◀ Prev</button>
+                <button class="btn-page" :disabled="!nextPageToken || loadingDs" @click="$emit('nextPage')"
+                    title="Next Page (nextPageToken)">Next ▶</button>
+            </div>
+        </div>
     </div>
 </template>
 
@@ -47,13 +68,25 @@ const props = defineProps({
     selectedDs: { type: String, default: '' },
     loadingDs: { type: Boolean, default: false },
     loadingKeys: { type: Boolean, default: false },
-    isCollapsed: { type: Boolean, default: false }
+    isCollapsed: { type: Boolean, default: false },
+    limit: { type: Number, default: 10 },
+    nextPageToken: { type: String, default: null },
+    hasPrevPage: { type: Boolean, default: false },
+    pageNumber: { type: Number, default: 1 }
 });
 
-const emit = defineEmits(['refresh', 'selectDataStore', 'deleteDataStore', 'toggleCollapse']);
+const emit = defineEmits([
+    'refresh',
+    'selectDataStore',
+    'deleteDataStore',
+    'toggleCollapse',
+    'update:limit',
+    'nextPage',
+    'prevPage'
+]);
 
 const handleSelect = (dsName) => {
-    if (props.loadingKeys || props.loadingDs) return; // Spam protection
+    if (props.loadingKeys || props.loadingDs) return;
     emit('selectDataStore', dsName);
 };
 </script>
@@ -243,5 +276,62 @@ li.disabled {
     to {
         transform: rotate(360deg);
     }
+}
+
+/* Pagination Bar Styles */
+.pagination-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    margin-top: 6px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.pagination-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.select-per-page {
+    font-size: 11px;
+    padding: 2px 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: white;
+    color: #334155;
+    cursor: pointer;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-page {
+    padding: 3px 8px;
+    font-size: 11px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-page:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.btn-page:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 </style>

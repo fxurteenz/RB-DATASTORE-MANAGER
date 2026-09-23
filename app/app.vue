@@ -22,8 +22,14 @@
                 <!-- Combined DataStores & Keys Card -->
                 <DataStoresKeysCard :datastores="datastores" :loading-ds="loadingDs" :loading-keys="loadingKeys"
                     :loading-data="loadingData" :selected-ds="selectedDs" :keys="keys" :selected-key="selectedKey"
-                    v-model:key-search-query="keySearchQuery" @refresh-ds="fetchDataStores" @select-ds="fetchKeys"
-                    @delete-ds="deleteDataStore" @select-key="fetchData" @delete-key="deleteKey" />
+                    v-model:key-search-query="keySearchQuery" v-model:ds-limit="dsLimit"
+                    :ds-next-page-token="dsNextPageToken" :ds-has-prev-page="dsHasPrevPage"
+                    :ds-page-number="dsPageNumber" v-model:key-limit="keyLimit" :key-next-page-token="keyNextPageToken"
+                    :key-has-prev-page="keyHasPrevPage" :key-page-number="keyPageNumber"
+                    @refresh-ds="() => fetchDataStores('', true)" @select-ds="(name) => fetchKeys(name, '', true)"
+                    @delete-ds="deleteDataStore" @select-key="fetchData" @delete-key="deleteKey"
+                    @next-ds-page="nextDsPage" @prev-ds-page="prevDsPage" @next-key-page="nextKeyPage"
+                    @prev-key-page="prevKeyPage" />
 
                 <!-- Data Editor Column -->
                 <DataEditor :selected-key="selectedKey" :loading-data="loadingData" :selected-data="selectedData"
@@ -60,7 +66,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 
 // SideNav State & Resizing
 const sidenavWidth = ref(280);
@@ -114,15 +120,28 @@ const activeUniverse = ref(null);
 
 const hasCredentials = computed(() => !!activeUniverse.value);
 
-// DataStores & Keys State
+// DataStores Pagination & Cursor State
 const datastores = ref([]);
 const loadingDs = ref(false);
 const selectedDs = ref('');
+const dsLimit = ref(10);
+const dsNextPageToken = ref(null);
+const dsCursorsStack = ref(['']);
+const dsPageIndex = ref(0);
+const dsHasPrevPage = computed(() => dsPageIndex.value > 0);
+const dsPageNumber = computed(() => dsPageIndex.value + 1);
 
+// Keys Pagination & Cursor State
 const keys = ref([]);
 const keySearchQuery = ref('');
 const loadingKeys = ref(false);
 const selectedKey = ref('');
+const keyLimit = ref(10);
+const keyNextPageToken = ref(null);
+const keyCursorsStack = ref(['']);
+const keyPageIndex = ref(0);
+const keyHasPrevPage = computed(() => keyPageIndex.value > 0);
+const keyPageNumber = computed(() => keyPageIndex.value + 1);
 
 // Data Editor State
 const selectedData = ref(null);
@@ -132,6 +151,100 @@ const jsonTextData = ref('');
 const guiData = ref(null);
 const savingData = ref(false);
 const saveDataMessage = ref('');
+
+// DataStores Fetcher with Roblox API Cursor Pagination
+const fetchDataStores = async (cursor = '', resetStack = true) => {
+    if (loadingDs.value) return;
+    loadingDs.value = true;
+    if (resetStack) {
+        dsCursorsStack.value = [''];
+        dsPageIndex.value = 0;
+    }
+    try {
+        const res = await $fetch(`/api/datastores?limit=${dsLimit.value}&cursor=${encodeURIComponent(cursor)}`);
+        datastores.value = res.datastores || [];
+        dsNextPageToken.value = res.nextPageToken || null;
+    } catch {
+        alert("ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบ API Key");
+    } finally {
+        loadingDs.value = false;
+    }
+};
+
+const nextDsPage = () => {
+    if (!dsNextPageToken.value || loadingDs.value) return;
+    const nextCursor = dsNextPageToken.value;
+    dsPageIndex.value++;
+    dsCursorsStack.value[dsPageIndex.value] = nextCursor;
+    fetchDataStores(nextCursor, false);
+};
+
+const prevDsPage = () => {
+    if (dsPageIndex.value <= 0 || loadingDs.value) return;
+    dsPageIndex.value--;
+    const prevCursor = dsCursorsStack.value[dsPageIndex.value] || '';
+    fetchDataStores(prevCursor, false);
+};
+
+watch(dsLimit, () => {
+    if (hasCredentials.value) fetchDataStores('', true);
+});
+
+// Keys Fetcher with Roblox API Cursor & Prefix Pagination
+const fetchKeys = async (dsName = selectedDs.value, cursor = '', resetStack = true) => {
+    if (!dsName || loadingKeys.value) return;
+    if (selectedDs.value !== dsName || resetStack) {
+        if (selectedDs.value !== dsName) {
+            keySearchQuery.value = '';
+        }
+        selectedDs.value = dsName;
+        selectedKey.value = '';
+        selectedData.value = null;
+        keyCursorsStack.value = [''];
+        keyPageIndex.value = 0;
+    }
+    keys.value = [];
+    loadingKeys.value = true;
+    try {
+        const prefixParam = keySearchQuery.value.trim() ? `&prefix=${encodeURIComponent(keySearchQuery.value.trim())}` : '';
+        const res = await $fetch(`/api/datastores/${encodeURIComponent(dsName)}/keys?limit=${keyLimit.value}&cursor=${encodeURIComponent(cursor)}${prefixParam}`);
+        keys.value = res.keys || [];
+        keyNextPageToken.value = res.nextPageToken || null;
+    } catch {
+        alert("Failed to load keys");
+    } finally {
+        loadingKeys.value = false;
+    }
+};
+
+const nextKeyPage = () => {
+    if (!keyNextPageToken.value || loadingKeys.value) return;
+    const nextCursor = keyNextPageToken.value;
+    keyPageIndex.value++;
+    keyCursorsStack.value[keyPageIndex.value] = nextCursor;
+    fetchKeys(selectedDs.value, nextCursor, false);
+};
+
+const prevKeyPage = () => {
+    if (keyPageIndex.value <= 0 || loadingKeys.value) return;
+    keyPageIndex.value--;
+    const prevCursor = keyCursorsStack.value[keyPageIndex.value] || '';
+    fetchKeys(selectedDs.value, prevCursor, false);
+};
+
+watch(keyLimit, () => {
+    if (selectedDs.value) fetchKeys(selectedDs.value, '', true);
+});
+
+let searchDebounceTimeout = null;
+watch(keySearchQuery, () => {
+    if (selectedDs.value) {
+        clearTimeout(searchDebounceTimeout);
+        searchDebounceTimeout = setTimeout(() => {
+            fetchKeys(selectedDs.value, '', true);
+        }, 300);
+    }
+});
 
 // Universe Handlers
 const openAddUniverseModal = () => {
@@ -237,7 +350,7 @@ const loadSettings = async () => {
             activeUniverse.value = res.active_universe || null;
 
             if (hasCredentials.value) {
-                fetchDataStores();
+                fetchDataStores('', true);
             }
         }
     } catch (err) {
@@ -250,46 +363,15 @@ const setActiveUniverse = async (id) => {
     await loadSettings();
 };
 
-const fetchDataStores = async () => {
-    if (loadingDs.value) return; // Spam protection
-    loadingDs.value = true;
-    try {
-        const res = await $fetch('/api/datastores');
-        datastores.value = res.datastores || [];
-    } catch {
-        alert("ไม่สามารถดึงข้อมูลได้ กรุณาตรวจสอบ API Key");
-    } finally {
-        loadingDs.value = false;
-    }
-};
-
 const deleteDataStore = async (dsName) => {
     if (confirm(`คุณต้องการลบ DataStore "${dsName}" หรือไม่?\n(ระบบจะกำหนดตารางเวลาลบถาวรใน 30 วันและไม่สามารถเข้าถึงได้ระหว่างนี้)`)) {
         try {
             await $fetch(`/api/datastores/${encodeURIComponent(dsName)}`, { method: 'DELETE' });
             alert(`DataStore "${dsName}" ถูกกำหนดเวลาลบเรียบร้อยแล้ว`);
-            fetchDataStores();
+            fetchDataStores('', true);
         } catch {
             alert("ไม่สามารถลบ DataStore ได้");
         }
-    }
-};
-
-const fetchKeys = async (dsName) => {
-    if (loadingKeys.value) return; // Spam protection
-    selectedDs.value = dsName;
-    selectedKey.value = '';
-    selectedData.value = null;
-    keySearchQuery.value = '';
-    keys.value = [];
-    loadingKeys.value = true;
-    try {
-        const res = await $fetch(`/api/datastores/${encodeURIComponent(dsName)}/keys`);
-        keys.value = res.keys || [];
-    } catch {
-        alert("Failed to load keys");
-    } finally {
-        loadingKeys.value = false;
     }
 };
 
@@ -299,7 +381,7 @@ const deleteKey = async (keyName) => {
             await $fetch(`/api/datastores/${encodeURIComponent(selectedDs.value)}/${encodeURIComponent(keyName)}`, { method: 'DELETE' });
             alert("ลบ Key สำเร็จแล้ว");
             if (selectedKey.value === keyName) selectedKey.value = '';
-            fetchKeys(selectedDs.value);
+            fetchKeys(selectedDs.value, '', true);
         } catch {
             alert("ไม่สามารถลบ Key ได้");
         }
@@ -307,7 +389,7 @@ const deleteKey = async (keyName) => {
 };
 
 const fetchData = async (keyName) => {
-    if (loadingData.value) return; // Spam protection
+    if (loadingData.value) return;
     selectedKey.value = keyName;
     selectedData.value = null;
     loadingData.value = true;
@@ -325,7 +407,7 @@ const fetchData = async (keyName) => {
 };
 
 const saveData = async () => {
-    if (savingData.value) return; // Spam protection
+    if (savingData.value) return;
     savingData.value = true;
     saveDataMessage.value = '';
     try {

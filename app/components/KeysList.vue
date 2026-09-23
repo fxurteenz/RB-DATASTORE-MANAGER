@@ -3,14 +3,14 @@
         <h3>
             <span>Keys in "{{ selectedDs || '...' }}"</span>
             <span v-if="keys.length" class="count-badge">
-                {{ keySearchQuery ? `${filteredKeys.length}/${keys.length}` : keys.length }}
+                {{ keys.length }}
             </span>
         </h3>
 
         <!-- Search Box -->
-        <div v-if="selectedDs && keys.length" class="search-box">
+        <div v-if="selectedDs" class="search-box">
             <input :value="keySearchQuery" @input="$emit('update:keySearchQuery', $event.target.value)" type="text"
-                placeholder="🔍 ค้นหา Key..." class="search-input">
+                placeholder="🔍 ค้นหา Key (Prefix)..." class="search-input">
             <button v-if="keySearchQuery" @click="$emit('update:keySearchQuery', '')" class="btn-clear"
                 title="ล้างคำค้นหา">✕</button>
         </div>
@@ -18,16 +18,16 @@
         <div class="keys-body">
             <!-- Skeleton Loader when loading keys -->
             <div v-if="loadingKeys" class="skeleton-list">
-                <div v-for="i in 6" :key="i" class="skeleton-item">
+                <div v-for="i in Math.min(limit, 8)" :key="i" class="skeleton-item">
                     <div class="skeleton-bar skeleton-key-name"></div>
                     <div class="skeleton-bar skeleton-btn"></div>
                 </div>
             </div>
 
             <!-- Keys List -->
-            <ul v-else-if="filteredKeys.length">
-                <li v-for="k in filteredKeys" :key="k.key"
-                    :class="{ active: selectedKey === k.key, disabled: loadingData }" @click="handleSelect(k.key)">
+            <ul v-else-if="keys.length">
+                <li v-for="k in keys" :key="k.key" :class="{ active: selectedKey === k.key, disabled: loadingData }"
+                    @click="handleSelect(k.key)">
                     <div class="key-item-content">
                         <span v-html="highlightMatch(k.key, keySearchQuery)"></span>
                         <span v-if="selectedKey === k.key && loadingData" class="spinner-sm"
@@ -38,17 +38,36 @@
                 </li>
             </ul>
             <div v-else-if="!selectedDs" class="empty-state">Select a DataStore first</div>
-            <div v-else-if="keys.length && !filteredKeys.length" class="empty-state">
-                ไม่พบ Key ที่ตรงกับ "{{ keySearchQuery }}"
+            <div v-else-if="keySearchQuery && !keys.length" class="empty-state">
+                ไม่พบ Key ที่มี prefix "{{ keySearchQuery }}"
             </div>
             <div v-else class="empty-state">No keys found.</div>
+        </div>
+
+        <!-- Pagination Controls Bar using Roblox API nextPageToken / Cursor -->
+        <div v-if="selectedDs && (keys.length > 0 || hasPrevPage || nextPageToken)" class="pagination-bar">
+            <div class="pagination-info">
+                <span>Page {{ pageNumber }}</span>
+                <select :value="limit" @change="$emit('update:limit', Number($event.target.value))"
+                    class="select-per-page">
+                    <option :value="5">5/page</option>
+                    <option :value="10">10/page</option>
+                    <option :value="20">20/page</option>
+                    <option :value="50">50/page</option>
+                    <option :value="100">100/page</option>
+                </select>
+            </div>
+            <div class="pagination-controls">
+                <button class="btn-page" :disabled="!hasPrevPage || loadingKeys" @click="$emit('prevPage')"
+                    title="Previous Page">◀ Prev</button>
+                <button class="btn-page" :disabled="!nextPageToken || loadingKeys" @click="$emit('nextPage')"
+                    title="Next Page (nextPageToken)">Next ▶</button>
+            </div>
         </div>
     </div>
 </template>
 
 <script setup>
-import { computed } from 'vue';
-
 const props = defineProps({
     selectedDs: {
         type: String,
@@ -73,16 +92,33 @@ const props = defineProps({
     keySearchQuery: {
         type: String,
         default: ''
+    },
+    limit: {
+        type: Number,
+        default: 10
+    },
+    nextPageToken: {
+        type: String,
+        default: null
+    },
+    hasPrevPage: {
+        type: Boolean,
+        default: false
+    },
+    pageNumber: {
+        type: Number,
+        default: 1
     }
 });
 
-const emit = defineEmits(['update:keySearchQuery', 'select-key', 'delete-key']);
-
-const filteredKeys = computed(() => {
-    if (!props.keySearchQuery.trim()) return props.keys;
-    const q = props.keySearchQuery.toLowerCase().trim();
-    return props.keys.filter(k => k.key.toLowerCase().includes(q));
-});
+const emit = defineEmits([
+    'update:keySearchQuery',
+    'select-key',
+    'delete-key',
+    'update:limit',
+    'nextPage',
+    'prevPage'
+]);
 
 const highlightMatch = (text, query) => {
     if (!query || !query.trim()) return text;
@@ -92,7 +128,7 @@ const highlightMatch = (text, query) => {
 };
 
 const handleSelect = (keyName) => {
-    if (props.loadingData) return; // Spam protection
+    if (props.loadingData) return;
     emit('select-key', keyName);
 };
 </script>
@@ -207,19 +243,6 @@ h3 {
     background-size: 400px 100%;
     animation: shimmer 1.5s infinite linear;
     border-radius: 4px;
-
-    li.disabled {
-        cursor: not-allowed;
-        opacity: 0.8;
-    }
-
-    .key-item-content {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex: 1;
-        word-break: break-all;
-    }
 }
 
 .skeleton-key-name {
@@ -274,6 +297,19 @@ li.active {
     border-left: 3px solid #2563eb;
 }
 
+li.disabled {
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.key-item-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    word-break: break-all;
+}
+
 .btn-small {
     padding: 3px 6px;
     font-size: 12px;
@@ -326,5 +362,62 @@ li.active {
     padding: 0 2px;
     border-radius: 2px;
     font-weight: bold;
+}
+
+/* Pagination Bar Styles */
+.pagination-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 8px;
+    margin-top: 6px;
+    border-top: 1px solid #e2e8f0;
+    font-size: 11px;
+    color: #64748b;
+    flex-shrink: 0;
+}
+
+.pagination-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.select-per-page {
+    font-size: 11px;
+    padding: 2px 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 4px;
+    background: white;
+    color: #334155;
+    cursor: pointer;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.btn-page {
+    padding: 3px 8px;
+    font-size: 11px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    color: #334155;
+    font-weight: 500;
+    transition: all 0.15s ease;
+}
+
+.btn-page:hover:not(:disabled) {
+    background: #f1f5f9;
+    border-color: #94a3b8;
+}
+
+.btn-page:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 </style>
