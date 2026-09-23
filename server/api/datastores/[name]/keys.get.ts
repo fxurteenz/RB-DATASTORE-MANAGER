@@ -15,8 +15,14 @@ export default defineEventHandler(async (event) => {
     }
 
     const name = getRouterParam(event, "name");
+    const query = getQuery(event);
+    const limit = query.limit ? Math.min(Number(query.limit) || 10, 100) : 10;
+    const cursor = (query.cursor || query.pageToken || "") as string;
+    const prefix = (query.prefix || "") as string;
 
-    const url = `https://apis.roblox.com/datastores/v1/universes/${settings.universe_id}/standard-datastores/datastore/entries?datastoreName=${encodeURIComponent(name || "")}`;
+    let url = `https://apis.roblox.com/datastores/v1/universes/${settings.universe_id}/standard-datastores/datastore/entries?datastoreName=${encodeURIComponent(name || "")}&limit=${limit}`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    if (prefix) url += `&prefix=${encodeURIComponent(prefix)}`;
 
     const response = await fetch(url, {
         headers: {
@@ -30,5 +36,10 @@ export default defineEventHandler(async (event) => {
             statusCode: response.status,
             message: "Failed to fetch Keys",
         });
-    return await response.json();
+
+    const data = await response.json();
+    return {
+        keys: data.keys || [],
+        nextPageToken: data.nextPageCursor || data.nextPageToken || null,
+    };
 });

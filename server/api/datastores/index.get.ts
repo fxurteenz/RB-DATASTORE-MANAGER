@@ -14,7 +14,14 @@ export default defineEventHandler(async (event) => {
         });
     }
 
-    const url = `https://apis.roblox.com/datastores/v1/universes/${settings.universe_id}/standard-datastores`;
+    const query = getQuery(event);
+    const limit = query.limit ? Math.min(Number(query.limit) || 10, 100) : 10;
+    const cursor = (query.cursor || query.pageToken || "") as string;
+    const prefix = (query.prefix || "") as string;
+
+    let url = `https://apis.roblox.com/datastores/v1/universes/${settings.universe_id}/standard-datastores?limit=${limit}`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+    if (prefix) url += `&prefix=${encodeURIComponent(prefix)}`;
 
     const response = await fetch(url, {
         headers: {
@@ -28,5 +35,10 @@ export default defineEventHandler(async (event) => {
             statusCode: response.status,
             message: "Failed to fetch DataStores",
         });
-    return await response.json();
+
+    const data = await response.json();
+    return {
+        datastores: data.datastores || [],
+        nextPageToken: data.nextPageCursor || data.nextPageToken || null,
+    };
 });
