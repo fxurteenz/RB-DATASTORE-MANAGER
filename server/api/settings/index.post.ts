@@ -10,6 +10,23 @@ export default defineEventHandler(async (event) => {
             "INSERT INTO universes (name, universe_id, api_key, is_active) VALUES (?, ?, ?, 1)",
         ).run(name || "Unnamed Universe", universe_id, api_key);
         return { success: true, message: "Universe added successfully" };
+    } else if (action === "update") {
+        if (!id || !universe_id) {
+            throw createError({
+                statusCode: 400,
+                message: "กรุณาระบุ ID และ Universe ID ให้ครบถ้วน",
+            });
+        }
+        if (api_key) {
+            db.prepare(
+                "UPDATE universes SET name = ?, universe_id = ?, api_key = ? WHERE id = ?",
+            ).run(name || "Unnamed Universe", universe_id, api_key, id);
+        } else {
+            db.prepare(
+                "UPDATE universes SET name = ?, universe_id = ? WHERE id = ?",
+            ).run(name || "Unnamed Universe", universe_id, id);
+        }
+        return { success: true, message: "Universe updated successfully" };
     } else if (action === "set_active") {
         db.prepare("UPDATE universes SET is_active = 0").run();
         db.prepare("UPDATE universes SET is_active = 1 WHERE id = ?").run(id);
